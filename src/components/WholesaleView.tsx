@@ -113,10 +113,22 @@ const PartyKhataCard: React.FC<PartyKhataCardProps> = ({
           </div>
         </div>
 
-        {party.advanceBalance !== undefined && party.advanceBalance > 0 && (
-          <div className="mt-2 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2.5 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 flex items-center justify-between">
-            <span>Prepaid Advance Available:</span>
-            <span className="font-mono font-black text-xs">Rs. {party.advanceBalance.toLocaleString()}</span>
+        {((party.factoryAdvanceBalance && party.factoryAdvanceBalance > 0) || (party.userAdvanceBalance && party.userAdvanceBalance > 0) || (party.advanceBalance && party.advanceBalance > 0)) && (
+          <div className="mt-2 text-[11px] font-bold bg-indigo-50/80 dark:bg-indigo-950/50 p-2 rounded-lg border border-indigo-200 dark:border-indigo-800 space-y-1">
+            <div className="flex items-center justify-between text-indigo-950 dark:text-indigo-200">
+              <span>Prepaid Advance Available:</span>
+              <span className="font-mono font-black text-xs">Rs. {(party.advanceBalance || 0).toLocaleString()}</span>
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-400 font-medium pt-1 border-t border-indigo-200/50 dark:border-indigo-800/50">
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                With Factory: <strong className="text-emerald-700 dark:text-emerald-400 font-mono">Rs. {(party.factoryAdvanceBalance || 0).toLocaleString()}</strong>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                With User: <strong className="text-indigo-700 dark:text-indigo-400 font-mono">Rs. {(party.userAdvanceBalance || 0).toLocaleString()}</strong>
+              </span>
+            </div>
           </div>
         )}
       </div>
@@ -234,7 +246,11 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
 
   const targetPartyId = formData.partyId || (parties && parties.length > 0 ? parties[0].id : '');
   const selectedPartyObj = parties.find(p => p.id === targetPartyId);
-  const availableAdvance = selectedPartyObj?.advanceBalance || 0;
+  const isFactoryAccount = (formData.destinationAccount || 'FACTORY') === 'FACTORY';
+  const factoryAdvanceAvailable = selectedPartyObj?.factoryAdvanceBalance || 0;
+  const userAdvanceAvailable = selectedPartyObj?.userAdvanceBalance || 0;
+  const activeAccountAdvance = isFactoryAccount ? factoryAdvanceAvailable : userAdvanceAvailable;
+  const availableAdvance = activeAccountAdvance;
   const lanaVal = Number(formData.borrowedLana) || 0;
   const spotVal = Number(formData.paidSpot) || 0;
   const advanceVal = Number(formData.advancePayment) || 0;
@@ -246,7 +262,7 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
   const netPayableAdded = lanaVal;
   const currentPartyDue = selectedPartyObj?.currentBalance || 0;
   const resultingPartyBalance = currentPartyDue + lanaVal;
-  const resultingAdvanceBalance = Math.max(0, availableAdvance + advanceVal - advUsedVal);
+  const resultingAdvanceBalance = Math.max(0, activeAccountAdvance + advanceVal - advUsedVal);
 
   const handleSubmitSale = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -263,11 +279,11 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
 
     // Auto-apply total bags sale if no split was manually entered
     if (finalLana <= 0 && finalSpot <= 0 && finalAdvance <= 0 && finalAdvanceUsed <= 0 && totalBagsSale > 0) {
-      if (availableAdvance >= totalBagsSale) {
+      if (activeAccountAdvance >= totalBagsSale) {
         finalAdvanceUsed = totalBagsSale;
-      } else if (availableAdvance > 0) {
-        finalAdvanceUsed = availableAdvance;
-        finalLana = totalBagsSale - availableAdvance;
+      } else if (activeAccountAdvance > 0) {
+        finalAdvanceUsed = activeAccountAdvance;
+        finalLana = totalBagsSale - activeAccountAdvance;
       } else {
         finalLana = totalBagsSale;
       }
@@ -818,7 +834,18 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
                 <div className="grid grid-cols-2 gap-2 p-1 bg-slate-200/70 dark:bg-slate-900/80 rounded-xl">
                   <button
                     type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, destinationAccount: 'FACTORY' }))}
+                    onClick={() => {
+                      const newAvailable = factoryAdvanceAvailable;
+                      setFormData(prev => {
+                        const newAdvUsed = Math.min(prev.advanceUsed || 0, newAvailable);
+                        return {
+                          ...prev,
+                          destinationAccount: 'FACTORY',
+                          advanceUsed: newAdvUsed,
+                          borrowedLana: totalBagsSale > 0 ? Math.max(0, totalBagsSale - newAdvUsed - (Number(prev.paidSpot) || 0)) : prev.borrowedLana
+                        };
+                      });
+                    }}
                     className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                       formData.destinationAccount === 'FACTORY'
                         ? 'bg-emerald-600 text-white shadow-xs'
@@ -830,7 +857,18 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, destinationAccount: 'USER' }))}
+                    onClick={() => {
+                      const newAvailable = userAdvanceAvailable;
+                      setFormData(prev => {
+                        const newAdvUsed = Math.min(prev.advanceUsed || 0, newAvailable);
+                        return {
+                          ...prev,
+                          destinationAccount: 'USER',
+                          advanceUsed: newAdvUsed,
+                          borrowedLana: totalBagsSale > 0 ? Math.max(0, totalBagsSale - newAdvUsed - (Number(prev.paidSpot) || 0)) : prev.borrowedLana
+                        };
+                      });
+                    }}
                     className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                       formData.destinationAccount === 'USER'
                         ? 'bg-indigo-600 text-white shadow-xs'
@@ -948,23 +986,23 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
                 </span>
               </div>
 
-              {/* Option to Select Already Received Advance Money */}
-              {availableAdvance > 0 && (
+              {/* Option to Select Already Received Advance Money - Strictly visible ONLY if active destination account has advance */}
+              {activeAccountAdvance > 0 && (
                 <div className="p-3.5 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/80 rounded-xl space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse" />
                       <div>
                         <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200 block">
-                          Already Received Advance Money Available:
+                          Already Received Advance Money Available ({isFactoryAccount ? 'with Factory' : 'with User'}):
                         </span>
                         <span className="text-[10px] text-indigo-700 dark:text-indigo-300">
-                          {selectedPartyObj?.name} holds prepaid advance credit
+                          {selectedPartyObj?.name} holds prepaid advance credit with <strong>{isFactoryAccount ? 'Factory (Company)' : 'User (Farooq Gujjar)'}</strong>
                         </span>
                       </div>
                     </div>
                     <span className="px-3 py-1 bg-indigo-600 text-white font-mono font-black text-xs rounded-lg shadow-xs">
-                      Rs. {availableAdvance.toLocaleString()}
+                      Rs. {activeAccountAdvance.toLocaleString()}
                     </span>
                   </div>
 
@@ -972,7 +1010,7 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const maxToUse = totalBagsSale > 0 ? Math.min(availableAdvance, totalBagsSale) : availableAdvance;
+                        const maxToUse = totalBagsSale > 0 ? Math.min(activeAccountAdvance, totalBagsSale) : activeAccountAdvance;
                         setFormData(prev => ({
                           ...prev,
                           advanceUsed: maxToUse,
@@ -981,7 +1019,7 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
                       }}
                       className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-xs cursor-pointer transition-colors"
                     >
-                      Use Advance for Bags ({totalBagsSale > 0 ? `Apply Rs. ${Math.min(availableAdvance, totalBagsSale).toLocaleString()}` : 'Apply Max'})
+                      Use {isFactoryAccount ? 'Factory' : 'User'} Advance for Bags ({totalBagsSale > 0 ? `Apply Rs. ${Math.min(activeAccountAdvance, totalBagsSale).toLocaleString()}` : 'Apply Max'})
                     </button>
                     {advUsedVal > 0 && (
                       <button
@@ -1000,7 +1038,7 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
                     )}
                     {advUsedVal > 0 && (
                       <span className="text-[11px] font-bold text-indigo-900 dark:text-indigo-300 ml-auto">
-                        ✓ Selected: Rs. {advUsedVal.toLocaleString()} (Prepaid)
+                        ✓ Selected: Rs. {advUsedVal.toLocaleString()} (Prepaid {isFactoryAccount ? 'Factory' : 'User'} Credit)
                       </span>
                     )}
                   </div>
@@ -1014,20 +1052,20 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
                   <span className="text-[10px] text-blue-700 dark:text-blue-400 font-medium">Select advance, record lana, spot cash, or add advance</span>
                 </div>
 
-                <div className={`grid grid-cols-1 ${availableAdvance > 0 || advUsedVal > 0 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'} gap-3`}>
-                  {(availableAdvance > 0 || advUsedVal > 0) && (
+                <div className={`grid grid-cols-1 ${activeAccountAdvance > 0 || advUsedVal > 0 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'} gap-3`}>
+                  {(activeAccountAdvance > 0 || advUsedVal > 0) && (
                     <div>
                       <label className="block text-xs font-bold text-indigo-900 dark:text-indigo-300 mb-1">
-                        1. From Available Advance (Rs.)
+                        1. From {isFactoryAccount ? 'Factory' : 'User'} Advance (Rs.)
                       </label>
                       <input
                         type="number"
                         min="0"
-                        max={availableAdvance}
+                        max={activeAccountAdvance}
                         placeholder="0"
                         value={formData.advanceUsed || ''}
                         onChange={e => {
-                          const newAdvUsed = Math.min(availableAdvance, Number(e.target.value));
+                          const newAdvUsed = Math.min(activeAccountAdvance, Number(e.target.value));
                           setFormData(prev => ({
                             ...prev,
                             advanceUsed: newAdvUsed,
@@ -1037,14 +1075,14 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
                         className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-indigo-400 dark:border-indigo-600 rounded-lg text-xs font-mono font-bold text-indigo-900 dark:text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                       <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-                        Prepaid credit (Rs. 0 cash needed)
+                        Prepaid {isFactoryAccount ? 'Factory' : 'User'} credit (Rs. 0 cash needed)
                       </span>
                     </div>
                   )}
 
                   <div>
                     <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                      {availableAdvance > 0 || advUsedVal > 0 ? '2. Money Borrowed (Lana)' : '1. Money Borrowed (Lana)'} (Rs.)
+                      {activeAccountAdvance > 0 || advUsedVal > 0 ? '2. Money Borrowed (Lana)' : '1. Money Borrowed (Lana)'} (Rs.)
                     </label>
                     <input
                       type="number"
@@ -1061,7 +1099,7 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
 
                   <div>
                     <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                      {availableAdvance > 0 || advUsedVal > 0 ? '3. Paid on Spot' : '2. Paid on Spot'} (Rs.)
+                      {activeAccountAdvance > 0 || advUsedVal > 0 ? '3. Paid on Spot' : '2. Paid on Spot'} (Rs.)
                     </label>
                     <input
                       type="number"
@@ -1085,7 +1123,7 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
 
                   <div>
                     <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                      {availableAdvance > 0 || advUsedVal > 0 ? '4. Add Advance Money' : '3. Add Advance Money'} (Rs.)
+                      {activeAccountAdvance > 0 || advUsedVal > 0 ? `4. Add Advance Money (${isFactoryAccount ? 'Factory' : 'User'})` : `3. Add Advance Money (${isFactoryAccount ? 'Factory' : 'User'})`} (Rs.)
                     </label>
                     <input
                       type="number"
@@ -1096,7 +1134,7 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
                       className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-lg text-xs font-mono font-bold text-indigo-800 dark:text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-                      Stays as advance money in dealer's pool
+                      Stays as advance money in dealer's {isFactoryAccount ? 'Factory' : 'User'} pool
                     </span>
                   </div>
                 </div>
@@ -1185,7 +1223,7 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
                   </span>
                 </div>
                 <div className="flex justify-between text-indigo-900 dark:text-indigo-300 font-bold border-t border-slate-200/60 dark:border-slate-700/60 pt-1 items-center">
-                  <span>Resulting Available Advance Pool:</span>
+                  <span>Resulting Advance Pool ({isFactoryAccount ? 'Factory' : 'User'}):</span>
                   <span className="font-mono text-xs px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 dark:bg-indigo-950/80 dark:text-indigo-200 font-extrabold">
                     Rs. {resultingAdvanceBalance.toLocaleString()}
                   </span>
@@ -1336,6 +1374,25 @@ export const WholesaleView: React.FC<WholesaleViewProps> = ({
                 </div>
               </div>
             </div>
+
+            {((selectedPartyForLedger.factoryAdvanceBalance && selectedPartyForLedger.factoryAdvanceBalance > 0) || (selectedPartyForLedger.userAdvanceBalance && selectedPartyForLedger.userAdvanceBalance > 0) || (selectedPartyForLedger.advanceBalance && selectedPartyForLedger.advanceBalance > 0)) && (
+              <div className="mb-4 p-2.5 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+                <span className="font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
+                  Prepaid Advance Available: <strong className="font-mono text-sm ml-1 text-indigo-900 dark:text-indigo-300">Rs. {(selectedPartyForLedger.advanceBalance || 0).toLocaleString()}</strong>
+                </span>
+                <div className="flex items-center gap-4">
+                  <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    With Factory: <strong className="font-mono font-bold">Rs. {(selectedPartyForLedger.factoryAdvanceBalance || 0).toLocaleString()}</strong>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-indigo-700 dark:text-indigo-300 font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                    With User: <strong className="font-mono font-bold">Rs. {(selectedPartyForLedger.userAdvanceBalance || 0).toLocaleString()}</strong>
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Ledger Table */}
             {loadingLedger ? (

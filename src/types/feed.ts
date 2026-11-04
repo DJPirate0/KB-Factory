@@ -36,7 +36,9 @@ export interface Party {
   totalSales: number;
   totalReceived: number;
   currentBalance: number; // Positive means they owe us (Lana)
-  advanceBalance?: number; // Positive means party has available advance credit with us
+  advanceBalance?: number; // Total available advance credit with us
+  factoryAdvanceBalance?: number; // Advance paid to Factory account
+  userAdvanceBalance?: number; // Advance paid to User account
 }
 
 export interface Customer {

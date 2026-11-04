@@ -917,12 +917,32 @@ export const api = {
 
       const partiesWithAdv = parties.map((party) => {
         const partySales = sales.filter((s) => s.partyId === party.id);
-        const partyAdvGiven = partySales.reduce((sum, s) => sum + (Number(s.advancePayment) || 0), 0);
-        const partyAdvConsumed = partySales.reduce((sum, s) => sum + (Number(s.advanceUsed) || 0), 0);
-        const availableAdv = Math.max(0, partyAdvGiven - partyAdvConsumed);
+        
+        // Factory Account Advance:
+        const factoryAdvGiven = partySales
+          .filter((s) => s.destinationAccount !== 'USER')
+          .reduce((sum, s) => sum + (Number(s.advancePayment) || 0), 0);
+        const factoryAdvConsumed = partySales
+          .filter((s) => s.destinationAccount !== 'USER')
+          .reduce((sum, s) => sum + (Number(s.advanceUsed) || 0), 0);
+        const factoryAdvanceBalance = Math.max(0, factoryAdvGiven - factoryAdvConsumed);
+
+        // User Account Advance:
+        const userAdvGiven = partySales
+          .filter((s) => s.destinationAccount === 'USER')
+          .reduce((sum, s) => sum + (Number(s.advancePayment) || 0), 0);
+        const userAdvConsumed = partySales
+          .filter((s) => s.destinationAccount === 'USER')
+          .reduce((sum, s) => sum + (Number(s.advanceUsed) || 0), 0);
+        const userAdvanceBalance = Math.max(0, userAdvGiven - userAdvConsumed);
+
+        const availableAdv = factoryAdvanceBalance + userAdvanceBalance;
+
         return {
           ...party,
-          advanceBalance: availableAdv
+          advanceBalance: availableAdv,
+          factoryAdvanceBalance,
+          userAdvanceBalance
         };
       });
 
@@ -1173,11 +1193,12 @@ export const api = {
         reference: s.invoiceNumber || s.id
       });
       if (Number(s.advanceUsed) > 0) {
+        const advAcct = s.destinationAccount === 'USER' ? 'User Advance' : 'Factory Advance';
         ledgerEntries.push({
           id: 'adv-used-' + s.id,
           date: s.date,
           type: 'PAYMENT',
-          description: `Settled via Available Advance Credit (Prepaid)`,
+          description: `Settled via Available ${advAcct} Credit (Prepaid)`,
           debit: 0,
           credit: Number(s.advanceUsed),
           reference: s.invoiceNumber || s.id
